@@ -109,6 +109,22 @@ body {
     soft-pulse 3.2s ease-in-out 1.2s infinite;
 }
 
+@keyframes shimmer {
+  0% {
+    opacity: 0.55;
+  }
+  50% {
+    opacity: 1;
+  }
+  100% {
+    opacity: 0.55;
+  }
+}
+
+.animate-shimmer {
+  animation: shimmer 1.4s ease-in-out infinite;
+}
+
 button:not(:disabled),
 [type="submit"]:not(:disabled),
 [type="button"]:not(:disabled),
