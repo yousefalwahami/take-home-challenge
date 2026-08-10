@@ -11,7 +11,7 @@ const satoshi = localFont({
 });
 
 export const metadata: Metadata = {
-  title: "Inbox Agent",
+  title: "The Best Inbox Agent",
   description:
     "Connect Gmail. An agent decides what matters, drafts replies in your voice, and surfaces everything else worth knowing.",
 };

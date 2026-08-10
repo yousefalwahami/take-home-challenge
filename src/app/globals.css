@@ -32,11 +32,22 @@
   --font-display: var(--font-geist-pixel-square);
 }
 
+html,
+body {
+  height: 100%;
+}
+
 body {
   color: var(--ink);
   font-family: var(--font-body), "Satoshi", system-ui, sans-serif;
   background: var(--background);
-  min-height: 100vh;
+  min-height: 100%;
+}
+
+/* Landing is a single locked viewport — no residual body scroll */
+body:has(.landing-lock) {
+  overflow: hidden;
+  overscroll-behavior: none;
 }
 
 .font-display {
@@ -64,12 +75,23 @@ body {
   }
 }
 
-@keyframes toile-drift {
+/* Keep -translate-y-1/2 in the keyframes — a bare translateY(0) end
+   state was fighting Tailwind centering and jumping the panels. */
+@keyframes toile-drift-left {
   from {
-    transform: scale(1.02) translateY(6px);
+    transform: translateY(calc(-50% + 8px)) scale(1.02);
   }
   to {
-    transform: scale(1) translateY(0);
+    transform: translateY(-50%) scale(1);
+  }
+}
+
+@keyframes toile-drift-right {
+  from {
+    transform: translateY(calc(-50% + 8px)) scale(1.02);
+  }
+  to {
+    transform: translateY(-50%) scale(1);
   }
 }
 
@@ -99,8 +121,13 @@ body {
   animation: fade-in 1.1s ease-out both;
 }
 
-.animate-toile {
-  animation: toile-drift 1.4s cubic-bezier(0.22, 1, 0.36, 1) both;
+.animate-toile-left,
+.animate-toile-right {
+  animation: toile-drift-left 1.4s cubic-bezier(0.22, 1, 0.36, 1) both;
+}
+
+.animate-toile-right {
+  animation-name: toile-drift-right;
 }
 
 .animate-cta {
