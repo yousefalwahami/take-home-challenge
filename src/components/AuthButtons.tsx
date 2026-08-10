@@ -10,9 +10,15 @@ export function ConnectGmailButton() {
     >
       <button
         type="submit"
-        className="cursor-pointer inline-flex items-center justify-center rounded-md bg-[var(--accent)] px-6 py-3.5 text-base font-medium text-[var(--accent-fg)] shadow-[0_12px_40px_rgba(15,76,58,0.25)] transition hover:brightness-110"
+        className="animate-cta group inline-flex items-center justify-center gap-2 rounded-sm bg-[var(--castleton)] px-7 py-3.5 text-[15px] font-medium tracking-wide text-[var(--accent-fg)] transition duration-300 hover:-translate-y-0.5 hover:bg-[var(--castleton-deep)]"
       >
-        Connect Gmail
+        <span>Connect Gmail</span>
+        <span
+          aria-hidden
+          className="translate-x-0 transition duration-300 group-hover:translate-x-0.5"
+        >
+          →
+        </span>
       </button>
     </form>
   );
@@ -28,7 +34,7 @@ export function SignOutButton() {
     >
       <button
         type="submit"
-        className="cursor-pointer text-sm text-[var(--muted)] underline-offset-2 hover:text-[var(--ink)] hover:underline"
+        className="text-sm text-[var(--muted)] underline-offset-4 transition hover:text-[var(--castleton)] hover:underline"
       >
         Sign out
       </button>

@@ -1,17 +1,13 @@
 import type { Metadata } from "next";
-import { Fraunces, Source_Serif_4 } from "next/font/google";
+import localFont from "next/font/local";
+import { GeistPixelSquare } from "geist/font/pixel";
 import "./globals.css";
 
-const display = Fraunces({
-  variable: "--font-display",
-  subsets: ["latin"],
-  weight: ["500", "600", "700"],
-});
-
-const body = Source_Serif_4({
+const satoshi = localFont({
+  src: "./fonts/Satoshi-Variable.ttf",
   variable: "--font-body",
-  subsets: ["latin"],
-  weight: ["400", "500", "600"],
+  weight: "300 900",
+  display: "swap",
 });
 
 export const metadata: Metadata = {
@@ -26,7 +22,10 @@ export default function RootLayout({
   children: React.ReactNode;
 }>) {
   return (
-    <html lang="en" className={`${display.variable} ${body.variable} h-full`}>
+    <html
+      lang="en"
+      className={`${GeistPixelSquare.variable} ${satoshi.variable} h-full`}
+    >
       <body className="min-h-full antialiased">{children}</body>
     </html>
   );
