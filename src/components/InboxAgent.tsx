@@ -47,7 +47,7 @@ export function InboxAgent({ userName, userEmail }: Props) {
           type="button"
           onClick={runTriage}
           disabled={loading}
-          className="inline-flex items-center justify-center rounded-md bg-[var(--accent)] px-5 py-3 text-sm font-medium text-[var(--accent-fg)] transition hover:brightness-110 disabled:cursor-wait disabled:opacity-70"
+          className="cursor-pointer inline-flex items-center justify-center rounded-md bg-[var(--accent)] px-5 py-3 text-sm font-medium text-[var(--accent-fg)] transition hover:brightness-110 disabled:cursor-wait disabled:opacity-70"
         >
           {loading ? "Triaging inbox…" : "Triage last 7 days"}
         </button>
@@ -69,8 +69,9 @@ export function InboxAgent({ userName, userEmail }: Props) {
       {result && (
         <div className="space-y-12">
           <p className="text-sm text-[var(--muted)]">
-            Scanned {result.scannedCount} messages · ignored{" "}
-            {result.ignoredCount} · model{" "}
+            Scanned {result.scannedCount} inbox · ignored {result.ignoredCount}{" "}
+            · voice from {result.voiceSampleCount}/{result.sentFetchedCount}{" "}
+            sent · model{" "}
             <span className="font-mono text-[var(--ink)]">{result.model}</span>
           </p>
 

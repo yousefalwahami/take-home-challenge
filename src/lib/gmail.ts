@@ -3,7 +3,7 @@ import type { EmailMessage } from "@/lib/types";
 
 const INBOX_MAX = 50;
 const SENT_MAX = 20;
-const BODY_MAX_CHARS = 4000;
+const BODY_MAX_CHARS = 6000;
 
 function getGmail(accessToken: string) {
   const auth = new google.auth.OAuth2();
@@ -27,38 +27,61 @@ function decodeBodyData(data?: string | null): string {
   return Buffer.from(normalized, "base64").toString("utf8");
 }
 
-function extractBody(payload?: gmail_v1.Schema$MessagePart): string {
-  if (!payload) return "";
+function stripHtml(html: string): string {
+  return html
+    .replace(/<style[\s\S]*?<\/style>/gi, " ")
+    .replace(/<script[\s\S]*?<\/script>/gi, " ")
+    .replace(/<br\s*\/?>/gi, "\n")
+    .replace(/<\/p>/gi, "\n")
+    .replace(/<[^>]+>/g, " ")
+    .replace(/&nbsp;/g, " ")
+    .replace(/&amp;/g, "&")
+    .replace(/&lt;/g, "<")
+    .replace(/&gt;/g, ">")
+    .replace(/\s+\n/g, "\n")
+    .replace(/\n{3,}/g, "\n\n")
+    .replace(/[ \t]{2,}/g, " ")
+    .trim();
+}
 
+function collectParts(
+  payload: gmail_v1.Schema$MessagePart | undefined,
+  plain: string[],
+  html: string[],
+) {
+  if (!payload) return;
+
+  const mime = payload.mimeType ?? "";
   if (payload.body?.data) {
-    return decodeBodyData(payload.body.data);
+    const text = decodeBodyData(payload.body.data);
+    if (mime === "text/plain") plain.push(text);
+    else if (mime === "text/html") html.push(text);
+    else if (!mime.startsWith("multipart/") && text.trim()) plain.push(text);
   }
 
-  const parts = payload.parts ?? [];
-  const plain = parts.find((p) => p.mimeType === "text/plain");
-  if (plain?.body?.data) {
-    return decodeBodyData(plain.body.data);
+  for (const part of payload.parts ?? []) {
+    collectParts(part, plain, html);
   }
+}
 
-  for (const part of parts) {
-    const nested = extractBody(part);
-    if (nested) return nested;
-  }
+function extractBody(payload?: gmail_v1.Schema$MessagePart): string {
+  const plain: string[] = [];
+  const html: string[] = [];
+  collectParts(payload, plain, html);
 
-  const html = parts.find((p) => p.mimeType === "text/html");
-  if (html?.body?.data) {
-    return decodeBodyData(html.body.data)
-      .replace(/<[^>]+>/g, " ")
-      .replace(/\s+/g, " ")
-      .trim();
-  }
+  const plainText = plain.join("\n\n").trim();
+  if (plainText) return plainText;
 
-  return "";
+  const htmlText = html.map(stripHtml).filter(Boolean).join("\n\n").trim();
+  return htmlText;
 }
 
 function toEmailMessage(message: gmail_v1.Schema$Message): EmailMessage {
   const headers = message.payload?.headers;
   const body = extractBody(message.payload).slice(0, BODY_MAX_CHARS);
+  const internalDate = message.internalDate
+    ? new Date(Number(message.internalDate)).toISOString()
+    : "";
 
   return {
     id: message.id!,
@@ -66,7 +89,7 @@ function toEmailMessage(message: gmail_v1.Schema$Message): EmailMessage {
     from: header(headers, "From"),
     to: header(headers, "To"),
     subject: header(headers, "Subject") || "(no subject)",
-    date: header(headers, "Date"),
+    date: header(headers, "Date") || internalDate,
     snippet: message.snippet ?? "",
     body: body || message.snippet || "",
   };
@@ -108,11 +131,28 @@ export async function fetchInboxEmails(
   return listAndFetch(gmail, "in:inbox newer_than:7d", INBOX_MAX);
 }
 
+/** Most recent Sent messages (no short date window — voice needs volume). */
 export async function fetchSentEmails(
   accessToken: string,
 ): Promise<EmailMessage[]> {
   const gmail = getGmail(accessToken);
-  return listAndFetch(gmail, "in:sent newer_than:90d", SENT_MAX);
+  // Prefer real written mail over empty calendar/RSVP shells when possible.
+  const primary = await listAndFetch(
+    gmail,
+    "in:sent -from:calendar-notification@google.com -from:noreply",
+    SENT_MAX,
+  );
+
+  if (primary.length >= 10) return primary;
+
+  // Fall back to raw Sent if the filtered set is thin.
+  const fallback = await listAndFetch(gmail, "in:sent", SENT_MAX);
+  const byId = new Map(fallback.map((m) => [m.id, m]));
+  for (const m of primary) byId.set(m.id, m);
+
+  return Array.from(byId.values())
+    .sort((a, b) => Date.parse(b.date) - Date.parse(a.date) || 0)
+    .slice(0, SENT_MAX);
 }
 
 function encodeRawMessage(raw: string): string {

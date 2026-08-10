@@ -49,3 +49,16 @@ body {
 .animate-rise-delay-2 {
   animation: rise 0.85s ease-out 0.22s both;
 }
+
+button:not(:disabled),
+[type="submit"]:not(:disabled),
+[type="button"]:not(:disabled),
+summary {
+  cursor: pointer;
+}
+
+button:disabled,
+[type="submit"]:disabled,
+[type="button"]:disabled {
+  cursor: wait;
+}

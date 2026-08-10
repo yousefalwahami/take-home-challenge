@@ -86,6 +86,8 @@ export async function POST() {
       fyi,
       ignoredCount,
       scannedCount: inbox.length,
+      sentFetchedCount: sent.length,
+      voiceSampleCount: voice.sampleCount,
       voiceBrief: voice.styleBrief,
       model: getOpenRouterModel(),
     };

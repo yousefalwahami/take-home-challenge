@@ -39,6 +39,8 @@ export type TriageResponse = {
   fyi: FyiResult[];
   ignoredCount: number;
   scannedCount: number;
+  sentFetchedCount: number;
+  voiceSampleCount: number;
   voiceBrief: string;
   model: string;
 };
