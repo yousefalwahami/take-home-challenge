@@ -152,6 +152,46 @@ body:has(.landing-lock) {
   animation: shimmer 1.4s ease-in-out infinite;
 }
 
+@keyframes welcome-orb {
+  from {
+    opacity: 0;
+    transform: scale(0.92);
+  }
+  to {
+    opacity: 1;
+    transform: scale(1);
+  }
+}
+
+.animate-welcome-orb {
+  animation: welcome-orb 1.4s cubic-bezier(0.22, 1, 0.36, 1) both;
+}
+
+.animate-welcome-orb-delay {
+  animation: welcome-orb 1.6s cubic-bezier(0.22, 1, 0.36, 1) 0.15s both;
+}
+
+@keyframes pane-in {
+  from {
+    opacity: 0;
+    transform: translateX(8px);
+  }
+  to {
+    opacity: 1;
+    transform: translateX(0);
+  }
+}
+
+.animate-pane {
+  animation: pane-in 0.35s cubic-bezier(0.22, 1, 0.36, 1) both;
+}
+
+/* Inbox is a locked app shell — no page-level bounce scroll */
+body:has(.inbox-shell) {
+  overflow: hidden;
+  overscroll-behavior: none;
+}
+
 button:not(:disabled),
 [type="submit"]:not(:disabled),
 [type="button"]:not(:disabled),

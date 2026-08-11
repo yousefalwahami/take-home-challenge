@@ -1,7 +1,7 @@
 import Image from "next/image";
 import { auth } from "@/auth";
-import { ConnectGmailButton, SignOutButton } from "@/components/AuthButtons";
-import { InboxAgent } from "@/components/InboxAgent";
+import { ConnectGmailButton } from "@/components/AuthButtons";
+import { WelcomeHub } from "@/components/WelcomeHub";
 
 const STEPS = [
   {
@@ -26,32 +26,10 @@ export default async function HomePage() {
 
   if (session?.user) {
     return (
-      <div className="relative flex min-h-screen flex-col">
-        <div
-          aria-hidden
-          className="pointer-events-none absolute inset-0 -z-10 overflow-hidden"
-        >
-          <div className="absolute inset-0 bg-[radial-gradient(900px_480px_at_12%_-8%,#e7f0eb_0%,transparent_55%),radial-gradient(700px_420px_at_100%_0%,#f3ebe0_0%,transparent_50%),linear-gradient(180deg,#f7faf8_0%,#eef4f1_100%)]" />
-        </div>
-
-        <header className="mx-auto flex w-full max-w-6xl items-center justify-between px-6 pt-8">
-          <p className="font-display text-lg text-[var(--castleton)]">
-            The Best Inbox Agent
-          </p>
-          <SignOutButton />
-        </header>
-
-        <main className="mx-auto flex w-full max-w-6xl flex-1 flex-col px-6 pb-16 pt-10">
-          <InboxAgent
-            userName={session.user.name}
-            userEmail={session.user.email}
-          />
-        </main>
-
-        <footer className="mx-auto w-full max-w-6xl px-6 pb-8 text-xs text-[var(--muted)]">
-          Powered by Claude Sonnet 5 via OpenRouter · Drafts only, never sends
-        </footer>
-      </div>
+      <WelcomeHub
+        userName={session.user.name}
+        userEmail={session.user.email}
+      />
     );
   }
 

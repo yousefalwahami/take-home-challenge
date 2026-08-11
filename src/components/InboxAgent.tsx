@@ -1,21 +1,29 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import Link from "next/link";
+import { useEffect, useMemo, useRef, useState } from "react";
 import type { FyiResult, NeedsReplyResult, TriageResponse } from "@/lib/types";
+import { SignOutButton } from "@/components/AuthButtons";
 
 type Props = {
   userName?: string | null;
   userEmail?: string | null;
+  autoRun?: boolean;
 };
 
 type Stage = "fetching" | "analyzing" | "drafting" | "saving" | "done";
 type TriageDays = 7 | 14 | 30;
 type TriageMode = "new" | "rescan";
+type ListFilter = "reply" | "fyi" | "all";
+
+type ListItem =
+  | { kind: "reply"; key: string; item: NeedsReplyResult; prior?: boolean }
+  | { kind: "fyi"; key: string; item: FyiResult; prior?: boolean };
 
 const DAY_OPTIONS: { value: TriageDays; label: string }[] = [
-  { value: 7, label: "7 days" },
-  { value: 14, label: "14 days" },
-  { value: 30, label: "30 days" },
+  { value: 7, label: "7d" },
+  { value: 14, label: "14d" },
+  { value: 30, label: "30d" },
 ];
 
 const STAGES: { id: Stage; label: string }[] = [
@@ -43,10 +51,23 @@ function shortDate(value: string): string {
   return d.toLocaleDateString(undefined, { month: "short", day: "numeric" });
 }
 
-export function InboxAgent({ userName, userEmail }: Props) {
+function initials(from: string): string {
+  const name = displayName(from);
+  const parts = name.split(/\s+/).filter(Boolean);
+  if (parts.length >= 2) {
+    return `${parts[0]![0] ?? ""}${parts[1]![0] ?? ""}`.toUpperCase();
+  }
+  return name.slice(0, 2).toUpperCase() || "?";
+}
+
+export function InboxAgent({ userName, userEmail, autoRun = false }: Props) {
+  const autoStarted = useRef(false);
+
   const [days, setDays] = useState<TriageDays>(7);
   const [mode, setMode] = useState<TriageMode>("new");
   const [refreshTone, setRefreshTone] = useState(false);
+  const [settingsOpen, setSettingsOpen] = useState(false);
+  const [filter, setFilter] = useState<ListFilter>("reply");
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [result, setResult] = useState<TriageResponse | null>(null);
@@ -59,7 +80,8 @@ export function InboxAgent({ userName, userEmail }: Props) {
   );
   const [partialDrafts, setPartialDrafts] = useState<NeedsReplyResult[]>([]);
   const [pendingDraftCount, setPendingDraftCount] = useState(0);
-  const [expandedDraftId, setExpandedDraftId] = useState<string | null>(null);
+  const [selectedKey, setSelectedKey] = useState<string | null>(null);
+  const [mobileShowDetail, setMobileShowDetail] = useState(false);
   const [liveCounts, setLiveCounts] = useState<{
     scannedCount?: number;
     newCount?: number;
@@ -90,16 +112,76 @@ export function InboxAgent({ userName, userEmail }: Props) {
   const showPriorFyi = result?.priorFyi ?? partialPriorFyi;
   const showPriorNeeds = result?.priorNeedsReply ?? partialPriorNeeds;
 
+  const replyCount =
+    result?.needsReply.length ??
+    (typeof pendingDraftCount === "number" ? pendingDraftCount : 0);
+  const fyiCount = showFyi?.length ?? 0;
+  const newCount = result?.newCount ?? liveCounts.newCount;
+  const priorCount = result?.priorCount ?? liveCounts.priorCount;
+  const persistence =
+    result?.persistenceEnabled ?? liveCounts.persistenceEnabled ?? false;
+  const voiceCached = result?.voiceCached ?? liveCounts.voiceCached;
+  const hasRun = loading || result != null || showFyi != null || error != null;
+
+  const listItems = useMemo(() => {
+    const replies: ListItem[] = (showDrafts ?? [])
+      .filter((item): item is NeedsReplyResult => item != null)
+      .map((item) => ({
+        kind: "reply" as const,
+        key: `reply-${item.email.id}`,
+        item,
+      }));
+
+    const fyis: ListItem[] = (showFyi ?? []).map((item) => ({
+      kind: "fyi" as const,
+      key: `fyi-${item.email.id}`,
+      item,
+    }));
+
+    if (filter === "reply") return replies;
+    if (filter === "fyi") return fyis;
+    return [...replies, ...fyis];
+  }, [filter, showDrafts, showFyi]);
+
+  const priorItems = useMemo(() => {
+    if (mode !== "new") return [] as ListItem[];
+    const replies: ListItem[] = showPriorNeeds.map((item) => ({
+      kind: "reply" as const,
+      key: `prior-reply-${item.email.id}`,
+      item,
+      prior: true,
+    }));
+    const fyis: ListItem[] = showPriorFyi.map((item) => ({
+      kind: "fyi" as const,
+      key: `prior-fyi-${item.email.id}`,
+      item,
+      prior: true,
+    }));
+    if (filter === "reply") return replies;
+    if (filter === "fyi") return fyis;
+    return [...replies, ...fyis];
+  }, [filter, mode, showPriorFyi, showPriorNeeds]);
+
+  const selected = useMemo(() => {
+    const all = [...listItems, ...priorItems];
+    return all.find((item) => item.key === selectedKey) ?? null;
+  }, [listItems, priorItems, selectedKey]);
+
   useEffect(() => {
-    if (!showDrafts) return;
-    const firstReady = showDrafts.find((d) => d)?.email.id ?? null;
-    setExpandedDraftId((current) => {
-      if (current && showDrafts.some((d) => d?.email.id === current)) {
-        return current;
+    if (listItems.length === 0) {
+      if (priorItems.length > 0) {
+        setSelectedKey((current) => {
+          if (current && priorItems.some((i) => i.key === current)) return current;
+          return priorItems[0]!.key;
+        });
       }
-      return firstReady;
+      return;
+    }
+    setSelectedKey((current) => {
+      if (current && listItems.some((i) => i.key === current)) return current;
+      return listItems[0]!.key;
     });
-  }, [showDrafts]);
+  }, [listItems, priorItems]);
 
   async function runTriage() {
     setLoading(true);
@@ -116,11 +198,14 @@ export function InboxAgent({ userName, userEmail }: Props) {
     setPartialPriorNeeds([]);
     setPartialDrafts([]);
     setPendingDraftCount(0);
-    setExpandedDraftId(null);
+    setSelectedKey(null);
+    setMobileShowDetail(false);
     setLiveCounts({ days, mode });
+    setFilter("reply");
 
     const askedRefreshTone = refreshTone;
     setRefreshTone(false);
+    setSettingsOpen(false);
 
     try {
       const res = await fetch("/api/triage", {
@@ -192,6 +277,9 @@ export function InboxAgent({ userName, userEmail }: Props) {
               (data.priorNeedsReply as NeedsReplyResult[]) ?? [],
             );
             setPendingDraftCount(data.needsReplyCount as number);
+            const needs = data.needsReplyCount as number;
+            const fyiLen = Array.isArray(data.fyi) ? data.fyi.length : 0;
+            if (needs === 0 && fyiLen > 0) setFilter("fyi");
           }
 
           if (eventName === "draft") {
@@ -220,39 +308,38 @@ export function InboxAgent({ userName, userEmail }: Props) {
     }
   }
 
-  const replyCount =
-    result?.needsReply.length ??
-    (typeof pendingDraftCount === "number" ? pendingDraftCount : 0);
-  const fyiCount = showFyi?.length ?? 0;
-  const newCount = result?.newCount ?? liveCounts.newCount;
-  const priorCount = result?.priorCount ?? liveCounts.priorCount;
-  const persistence =
-    result?.persistenceEnabled ?? liveCounts.persistenceEnabled ?? false;
-  const voiceCached = result?.voiceCached ?? liveCounts.voiceCached;
-  const hasBrief =
-    typeof liveCounts.scannedCount === "number" || result != null;
+  useEffect(() => {
+    if (!autoRun || autoStarted.current) return;
+    autoStarted.current = true;
+    if (typeof window !== "undefined") {
+      window.history.replaceState(null, "", "/inbox");
+    }
+    void runTriage();
+    // Intentionally once when Welcome hub deep-links with ?run=1
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [autoRun]);
+
+  function selectItem(key: string) {
+    setSelectedKey(key);
+    setMobileShowDetail(true);
+  }
 
   return (
-    <div className="space-y-8">
-      <section className="flex flex-col gap-5 border-b border-[var(--line)] pb-6">
-        <div className="flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between">
-          <div>
-            <p className="text-sm text-[var(--muted)]">Signed in as</p>
-            <p className="font-display mt-1 text-2xl text-[var(--castleton)]">
-              {userName ?? userEmail}
-            </p>
-            <p className="mt-2 max-w-xl text-sm leading-relaxed text-[var(--muted)]">
-              Default: only sort <span className="text-[var(--ink)]">new</span>{" "}
-              mail in the window. Already-reviewed messages stay saved — new
-              arrivals show up on the next run.
-            </p>
-          </div>
+    <div className="inbox-shell flex h-dvh max-h-dvh flex-col overflow-hidden bg-[var(--background)] text-[var(--ink)]">
+      <header className="relative z-20 shrink-0 border-b border-[var(--line)]/80 bg-[var(--paper)]/90 backdrop-blur-md">
+        <div className="flex items-center gap-3 px-4 py-3 sm:px-5">
+          <Link
+            href="/"
+            className="font-display shrink-0 text-sm tracking-[0.04em] text-[var(--castleton)] transition hover:opacity-80 sm:text-base"
+          >
+            The Best Inbox Agent
+          </Link>
 
-          <div className="flex flex-col gap-3 sm:items-end">
+          <div className="ml-auto flex items-center gap-2 sm:gap-3">
             <div
               role="group"
               aria-label="Triage window"
-              className="inline-flex rounded-sm border border-[var(--line)] bg-[var(--paper)] p-0.5"
+              className="hidden rounded-sm border border-[var(--line)] bg-[var(--background)] p-0.5 sm:inline-flex"
             >
               {DAY_OPTIONS.map((opt) => {
                 const active = days === opt.value;
@@ -262,7 +349,7 @@ export function InboxAgent({ userName, userEmail }: Props) {
                     type="button"
                     disabled={loading}
                     onClick={() => setDays(opt.value)}
-                    className={`px-3 py-2 text-sm transition ${
+                    className={`rounded-[2px] px-2.5 py-1.5 text-xs transition ${
                       active
                         ? "bg-[var(--castleton)] text-[var(--accent-fg)]"
                         : "text-[var(--muted)] hover:text-[var(--ink)]"
@@ -277,13 +364,13 @@ export function InboxAgent({ userName, userEmail }: Props) {
             <div
               role="group"
               aria-label="Triage mode"
-              className="inline-flex rounded-sm border border-[var(--line)] bg-[var(--paper)] p-0.5"
+              className="hidden rounded-sm border border-[var(--line)] bg-[var(--background)] p-0.5 md:inline-flex"
             >
               <button
                 type="button"
                 disabled={loading}
                 onClick={() => setMode("new")}
-                className={`px-3 py-2 text-sm transition ${
+                className={`rounded-[2px] px-2.5 py-1.5 text-xs transition ${
                   mode === "new"
                     ? "bg-[var(--castleton)] text-[var(--accent-fg)]"
                     : "text-[var(--muted)] hover:text-[var(--ink)]"
@@ -295,58 +382,139 @@ export function InboxAgent({ userName, userEmail }: Props) {
                 type="button"
                 disabled={loading}
                 onClick={() => setMode("rescan")}
-                className={`px-3 py-2 text-sm transition ${
+                className={`rounded-[2px] px-2.5 py-1.5 text-xs transition ${
                   mode === "rescan"
                     ? "bg-[var(--castleton)] text-[var(--accent-fg)]"
                     : "text-[var(--muted)] hover:text-[var(--ink)]"
                 }`}
               >
-                Re-scan all
+                Re-scan
               </button>
+            </div>
+
+            <button
+              type="button"
+              disabled={loading}
+              onClick={() => setSettingsOpen((o) => !o)}
+              className={`rounded-sm border px-2.5 py-1.5 text-xs transition ${
+                settingsOpen
+                  ? "border-[var(--castleton)] bg-[var(--castleton-soft)] text-[var(--castleton)]"
+                  : "border-[var(--line)] text-[var(--muted)] hover:text-[var(--ink)]"
+              }`}
+              aria-expanded={settingsOpen}
+            >
+              Options
+            </button>
+
+            <button
+              type="button"
+              onClick={() => void runTriage()}
+              disabled={loading}
+              className="inline-flex items-center justify-center rounded-sm bg-[var(--castleton)] px-3.5 py-1.5 text-xs font-medium text-[var(--accent-fg)] shadow-[0_8px_24px_rgba(0,86,59,0.18)] transition hover:bg-[var(--castleton-deep)] disabled:opacity-70 sm:px-4 sm:text-sm"
+            >
+              {loading ? "Triaging…" : "Run triage"}
+            </button>
+
+            <div className="hidden border-l border-[var(--line)] pl-3 sm:block">
+              <SignOutButton />
             </div>
           </div>
         </div>
 
-        <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-          <label className="flex cursor-pointer items-center gap-2 text-sm text-[var(--muted)]">
-            <input
-              type="checkbox"
-              checked={refreshTone}
-              disabled={loading}
-              onChange={(e) => setRefreshTone(e.target.checked)}
-              className="accent-[var(--castleton)]"
-            />
-            Refresh writing tone from Sent
-            {voiceCached && !refreshTone && (
-              <span className="text-[var(--castleton)]">· using saved tone</span>
-            )}
-          </label>
+        {settingsOpen && (
+          <div className="animate-rise border-t border-[var(--line)] bg-[var(--paper)] px-4 py-3 sm:px-5">
+            <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+              <div className="flex flex-wrap items-center gap-2 sm:hidden">
+                {DAY_OPTIONS.map((opt) => {
+                  const active = days === opt.value;
+                  return (
+                    <button
+                      key={opt.value}
+                      type="button"
+                      disabled={loading}
+                      onClick={() => setDays(opt.value)}
+                      className={`rounded-sm px-3 py-1.5 text-xs ${
+                        active
+                          ? "bg-[var(--castleton)] text-[var(--accent-fg)]"
+                          : "border border-[var(--line)] text-[var(--muted)]"
+                      }`}
+                    >
+                      {opt.label}
+                    </button>
+                  );
+                })}
+                <button
+                  type="button"
+                  disabled={loading}
+                  onClick={() => setMode("new")}
+                  className={`rounded-sm px-3 py-1.5 text-xs ${
+                    mode === "new"
+                      ? "bg-[var(--castleton)] text-[var(--accent-fg)]"
+                      : "border border-[var(--line)] text-[var(--muted)]"
+                  }`}
+                >
+                  What’s new
+                </button>
+                <button
+                  type="button"
+                  disabled={loading}
+                  onClick={() => setMode("rescan")}
+                  className={`rounded-sm px-3 py-1.5 text-xs ${
+                    mode === "rescan"
+                      ? "bg-[var(--castleton)] text-[var(--accent-fg)]"
+                      : "border border-[var(--line)] text-[var(--muted)]"
+                  }`}
+                >
+                  Re-scan
+                </button>
+              </div>
 
-          <button
-            type="button"
-            onClick={runTriage}
-            disabled={loading}
-            className="inline-flex items-center justify-center rounded-sm bg-[var(--castleton)] px-5 py-2.5 text-sm font-medium text-[var(--accent-fg)] shadow-[0_12px_36px_rgba(0,86,59,0.22)] transition hover:bg-[var(--castleton-deep)] disabled:opacity-70"
-          >
-            {loading ? "Triaging…" : "Run triage"}
-          </button>
-        </div>
+              <label className="flex cursor-pointer items-center gap-2 text-sm text-[var(--muted)]">
+                <input
+                  type="checkbox"
+                  checked={refreshTone}
+                  disabled={loading}
+                  onChange={(e) => setRefreshTone(e.target.checked)}
+                  className="accent-[var(--castleton)]"
+                />
+                Refresh writing tone from Sent
+                {voiceCached && !refreshTone && (
+                  <span className="text-[var(--castleton)]">· saved tone</span>
+                )}
+              </label>
 
-        {!persistence && (
-          <p className="text-xs text-[var(--muted)]">
-            Persistence off — add Supabase env vars to remember tone and
-            already-reviewed mail between runs.
-          </p>
+              <p className="text-xs text-[var(--muted)]">
+                {persistence
+                  ? "Persistence on — tone and reviewed mail are remembered."
+                  : "Persistence off — add Supabase env vars to remember between runs."}
+              </p>
+
+              <div className="sm:hidden">
+                <SignOutButton />
+              </div>
+            </div>
+          </div>
         )}
-      </section>
+
+        {loading && (
+          <div className="absolute inset-x-0 bottom-0 h-0.5 overflow-hidden bg-[var(--castleton-soft)]">
+            <div
+              className="h-full bg-[var(--castleton)] transition-all duration-500 ease-out"
+              style={{
+                width: `${Math.max(8, ((activeIndex + 1) / STAGES.length) * 100)}%`,
+              }}
+            />
+          </div>
+        )}
+      </header>
 
       {loading && (
-        <div className="animate-rise space-y-3">
-          <div className="flex items-center justify-between gap-3 text-sm">
-            <p className="font-medium text-[var(--ink)]">
+        <div className="shrink-0 border-b border-[var(--line)]/60 bg-[var(--castleton-soft)]/40 px-4 py-2 sm:px-5">
+          <div className="flex items-center justify-between gap-3 text-xs sm:text-sm">
+            <p className="truncate text-[var(--ink)]">
               {stageDetail || "Working…"}
             </p>
-            <p className="text-xs text-[var(--muted)]">
+            <p className="hidden shrink-0 text-[var(--muted)] sm:block">
               {STAGES.map((s, i) => (
                 <span key={s.id}>
                   {i > 0 && " · "}
@@ -365,353 +533,453 @@ export function InboxAgent({ userName, userEmail }: Props) {
               ))}
             </p>
           </div>
-          <div className="h-1 overflow-hidden rounded-full bg-[var(--castleton-soft)]">
-            <div
-              className="h-full bg-[var(--castleton)] transition-all duration-500 ease-out"
-              style={{
-                width: `${Math.max(10, ((activeIndex + 1) / STAGES.length) * 100)}%`,
-              }}
-            />
-          </div>
         </div>
       )}
 
       {error && (
-        <div className="border-l-2 border-[var(--rose)] bg-[#f8eef0] px-5 py-4 text-sm text-[#6d3342]">
+        <div className="shrink-0 border-b border-[var(--rose)]/30 bg-[#f8eef0] px-4 py-3 text-sm text-[#6d3342] sm:px-5">
           {error}
         </div>
       )}
 
-      {hasBrief && (showFyi || showDrafts || loading) && (
-        <div className="animate-rise space-y-8">
-          <div className="grid grid-cols-2 gap-3 border border-[var(--line)] bg-[var(--paper)] sm:grid-cols-4 sm:gap-0 sm:divide-x sm:divide-[var(--line)]">
-            <BriefStat
-              label="New this run"
-              value={newCount ?? "—"}
-              hint={mode === "new" ? "Unseen mail" : "Full window"}
-              emphasis
-            />
-            <BriefStat
-              label="Needs reply"
-              value={replyCount}
-              hint="Action now"
-            />
-            <BriefStat
-              label="Worth knowing"
-              value={fyiCount}
-              hint="Don't miss"
-            />
-            <BriefStat
-              label="Already seen"
-              value={priorCount ?? "—"}
-              hint="Saved from before"
-            />
-          </div>
-
-          <p className="text-xs text-[var(--muted)]">
-            Last {result?.days ?? liveCounts.days ?? days} days
-            {mode === "new" ? " · what’s new" : " · full re-scan"}
-            {voiceCached ? " · saved tone" : " · tone rebuilt"}
-            {result?.model || liveCounts.model
-              ? ` · ${result?.model ?? liveCounts.model}`
-              : ""}
-          </p>
-
-          <div className="grid gap-10 lg:grid-cols-12 lg:gap-8">
-            <section className="lg:col-span-7">
-              <header className="mb-4 flex items-baseline justify-between gap-3 border-b border-[var(--castleton)] pb-2">
+      {!hasRun ? (
+        <EmptyInbox
+          userName={userName}
+          userEmail={userEmail}
+          loading={loading}
+          onRun={() => void runTriage()}
+        />
+      ) : (
+        <div className="flex min-h-0 flex-1">
+          <aside
+            className={`flex w-full min-w-0 flex-col border-r border-[var(--line)]/80 bg-[var(--paper)] md:w-[min(42%,420px)] md:shrink-0 ${
+              mobileShowDetail ? "hidden md:flex" : "flex"
+            }`}
+          >
+            <div className="shrink-0 border-b border-[var(--line)]/70 px-3 pt-3 pb-2 sm:px-4">
+              <div className="mb-3 flex items-end justify-between gap-2">
                 <div>
-                  <h2 className="font-display text-xl text-[var(--castleton)]">
-                    Needs your reply
-                  </h2>
-                  <p className="mt-1 text-sm text-[var(--muted)]">
-                    New drafts from this run.
+                  <p className="text-[11px] uppercase tracking-[0.16em] text-[var(--muted)]">
+                    Inbox
+                  </p>
+                  <p className="mt-0.5 text-sm text-[var(--ink)]">
+                    {userName ?? userEmail}
                   </p>
                 </div>
-                <span className="font-display text-sm text-[var(--gold)]">
-                  {replyCount}
-                </span>
-              </header>
+                {(typeof newCount === "number" ||
+                  typeof priorCount === "number") && (
+                  <p className="text-xs tabular-nums text-[var(--muted)]">
+                    {typeof newCount === "number" ? `${newCount} new` : ""}
+                    {typeof newCount === "number" &&
+                    typeof priorCount === "number"
+                      ? " · "
+                      : ""}
+                    {typeof priorCount === "number"
+                      ? `${priorCount} seen`
+                      : ""}
+                  </p>
+                )}
+              </div>
 
-              {showDrafts && showDrafts.length === 0 && !loading && (
-                <p className="py-6 text-sm text-[var(--muted)]">
-                  {mode === "new" && (newCount === 0 || newCount === undefined)
-                    ? "No new mail needs a reply — you’re caught up."
-                    : "Nothing needs a reply in this run."}
-                </p>
-              )}
+              <div
+                role="tablist"
+                aria-label="Inbox filter"
+                className="grid grid-cols-3 gap-1 rounded-sm bg-[var(--background)] p-1"
+              >
+                {(
+                  [
+                    { id: "reply", label: "Reply", count: replyCount },
+                    { id: "fyi", label: "FYI", count: fyiCount },
+                    {
+                      id: "all",
+                      label: "All",
+                      count: replyCount + fyiCount,
+                    },
+                  ] as const
+                ).map((tab) => {
+                  const active = filter === tab.id;
+                  return (
+                    <button
+                      key={tab.id}
+                      type="button"
+                      role="tab"
+                      aria-selected={active}
+                      onClick={() => setFilter(tab.id)}
+                      className={`rounded-[3px] px-2 py-1.5 text-xs transition ${
+                        active
+                          ? "bg-[var(--paper)] text-[var(--castleton)] shadow-[0_1px_2px_rgba(13,31,24,0.06)]"
+                          : "text-[var(--muted)] hover:text-[var(--ink)]"
+                      }`}
+                    >
+                      {tab.label}
+                      <span className="ml-1 tabular-nums opacity-70">
+                        {tab.count}
+                      </span>
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
 
+            <div className="min-h-0 flex-1 overflow-y-auto">
               {loading &&
+                listItems.length === 0 &&
                 pendingDraftCount === 0 &&
-                stage &&
-                stageIndex(stage) < stageIndex("drafting") &&
-                (newCount === undefined || newCount > 0) && (
-                  <div className="space-y-2">
-                    <SkeletonRow />
-                    <SkeletonRow />
+                !showFyi && (
+                  <div className="space-y-1 px-2 py-2">
+                    <SkeletonListRow />
+                    <SkeletonListRow />
+                    <SkeletonListRow />
                   </div>
                 )}
 
-              {showDrafts && showDrafts.length > 0 && (
-                <ul className="divide-y divide-[var(--line)] border-t border-[var(--line)]">
-                  {showDrafts.map((item, idx) =>
-                    item ? (
-                      <ReplyRow
-                        key={item.email.id}
-                        item={item}
-                        open={expandedDraftId === item.email.id}
-                        onToggle={() =>
-                          setExpandedDraftId((id) =>
-                            id === item.email.id ? null : item.email.id,
-                          )
-                        }
-                      />
-                    ) : (
-                      <li key={`pending-${idx}`} className="py-4">
-                        <SkeletonDraft />
-                      </li>
-                    ),
-                  )}
-                </ul>
-              )}
-
-              {showPriorNeeds.length > 0 && mode === "new" && (
-                <details className="mt-8 border-t border-[var(--line)] pt-4">
-                  <summary className="cursor-pointer text-sm text-[var(--muted)] hover:text-[var(--ink)]">
-                    Already reviewed · needs reply ({showPriorNeeds.length})
-                  </summary>
-                  <ul className="mt-3 divide-y divide-[var(--line)]">
-                    {showPriorNeeds.map((item) => (
-                      <ReplyRow
-                        key={`prior-${item.email.id}`}
-                        item={item}
-                        open={expandedDraftId === `prior-${item.email.id}`}
-                        onToggle={() =>
-                          setExpandedDraftId((id) =>
-                            id === `prior-${item.email.id}`
-                              ? null
-                              : `prior-${item.email.id}`,
-                          )
-                        }
-                      />
-                    ))}
-                  </ul>
-                </details>
-              )}
-            </section>
-
-            <section className="lg:col-span-5">
-              <header className="mb-4 flex items-baseline justify-between gap-3 border-b border-[var(--gold)] pb-2">
-                <div>
-                  <h2 className="font-display text-xl text-[var(--castleton)]">
-                    Worth knowing
-                  </h2>
-                  <p className="mt-1 text-sm text-[var(--muted)]">
-                    New FYIs this run — scan so nothing slips.
+              {listItems.length === 0 &&
+                !loading &&
+                priorItems.length === 0 && (
+                  <p className="px-5 py-10 text-center text-sm text-[var(--muted)]">
+                    {filter === "reply"
+                      ? "Nothing needs a reply in this run."
+                      : filter === "fyi"
+                        ? "No FYIs this run."
+                        : "No mail to show for this run."}
                   </p>
-                </div>
-                <span className="font-display text-sm text-[var(--gold)]">
-                  {fyiCount}
-                </span>
-              </header>
+                )}
 
-              {!showFyi && loading && (newCount === undefined || newCount > 0) && (
-                <div className="space-y-2">
-                  <SkeletonRow />
-                  <SkeletonRow />
-                  <SkeletonRow />
-                </div>
-              )}
-
-              {showFyi && showFyi.length === 0 && (
-                <p className="py-6 text-sm text-[var(--muted)]">
-                  No new FYIs this run.
-                </p>
-              )}
-
-              {showFyi && showFyi.length > 0 && (
-                <ul className="max-h-[min(50vh,480px)] overflow-y-auto border-t border-[var(--line)]">
-                  {showFyi.map((item) => (
-                    <FyiRow key={item.email.id} item={item} />
+              {listItems.length > 0 && (
+                <ul className="py-1">
+                  {listItems.map((entry) => (
+                    <MailListRow
+                      key={entry.key}
+                      entry={entry}
+                      selected={selectedKey === entry.key}
+                      onSelect={() => selectItem(entry.key)}
+                    />
                   ))}
+                  {loading &&
+                    filter !== "fyi" &&
+                    draftSlots.some((d) => d == null) &&
+                    Array.from({
+                      length: draftSlots.filter((d) => d == null).length,
+                    }).map((_, i) => <SkeletonListRow key={`sk-${i}`} />)}
                 </ul>
               )}
 
-              {showPriorFyi.length > 0 && mode === "new" && (
-                <details className="mt-6 border-t border-[var(--line)] pt-4">
-                  <summary className="cursor-pointer text-sm text-[var(--muted)] hover:text-[var(--ink)]">
-                    Already reviewed · FYI ({showPriorFyi.length})
-                  </summary>
-                  <ul className="mt-2 max-h-64 overflow-y-auto">
-                    {showPriorFyi.map((item) => (
-                      <FyiRow key={`prior-fyi-${item.email.id}`} item={item} />
+              {priorItems.length > 0 && (
+                <div className="border-t border-[var(--line)]/80">
+                  <p className="px-4 pt-4 pb-2 text-[11px] uppercase tracking-[0.14em] text-[var(--muted)]">
+                    Already reviewed
+                  </p>
+                  <ul className="pb-2">
+                    {priorItems.map((entry) => (
+                      <MailListRow
+                        key={entry.key}
+                        entry={entry}
+                        selected={selectedKey === entry.key}
+                        onSelect={() => selectItem(entry.key)}
+                        muted
+                      />
                     ))}
                   </ul>
-                </details>
+                </div>
               )}
-            </section>
-          </div>
+            </div>
+          </aside>
 
-          {!loading && result && (
-            <p className="border-t border-[var(--line)] pt-6 text-center text-sm text-[var(--muted)]">
-              {result.newCount === 0 && result.mode === "new"
-                ? `Caught up — no new mail in the last ${result.days} days.`
-                : `Done · ${result.newCount} new · ${result.priorCount} already seen.`}
+          <section
+            className={`min-w-0 flex-1 bg-[var(--background)] ${
+              mobileShowDetail ? "flex" : "hidden md:flex"
+            } flex-col`}
+          >
+            <ReadingPane
+              selected={selected}
+              loading={loading}
+              onBack={() => setMobileShowDetail(false)}
+              voiceBrief={result?.voiceBrief ?? liveCounts.voiceBrief}
+              voiceSampleCount={
+                result?.voiceSampleCount ?? liveCounts.voiceSampleCount
+              }
+              voiceCached={voiceCached}
+              meta={
+                result || liveCounts.days
+                  ? {
+                      days: result?.days ?? liveCounts.days ?? days,
+                      mode: result?.mode ?? liveCounts.mode ?? mode,
+                      model: result?.model ?? liveCounts.model,
+                      voiceCached,
+                    }
+                  : null
+              }
+            />
+          </section>
+        </div>
+      )}
+    </div>
+  );
+}
+
+function EmptyInbox({
+  userName,
+  userEmail,
+  loading,
+  onRun,
+}: {
+  userName?: string | null;
+  userEmail?: string | null;
+  loading: boolean;
+  onRun: () => void;
+}) {
+  return (
+    <div className="relative flex min-h-0 flex-1 flex-col items-center justify-center px-6 text-center">
+      <div
+        aria-hidden
+        className="pointer-events-none absolute inset-0 overflow-hidden"
+      >
+        <div className="absolute top-1/2 left-1/2 h-[420px] w-[420px] -translate-x-1/2 -translate-y-1/2 rounded-full bg-[var(--castleton)]/[0.04] blur-3xl" />
+      </div>
+      <div className="animate-rise relative max-w-md">
+        <p className="text-[11px] uppercase tracking-[0.2em] text-[var(--muted)]">
+          Your inbox brief
+        </p>
+        <h2 className="font-display mt-3 text-3xl text-[var(--castleton)] sm:text-4xl">
+          Nothing here yet
+        </h2>
+        <p className="mt-4 text-sm leading-relaxed text-[var(--muted)] sm:text-base">
+          Run triage for {userName ?? userEmail ?? "your account"} and this
+          space fills with replies to send and mail worth knowing — list on the
+          left, focus on the right.
+        </p>
+        <button
+          type="button"
+          onClick={onRun}
+          disabled={loading}
+          className="animate-cta mt-8 inline-flex items-center justify-center rounded-sm bg-[var(--castleton)] px-7 py-3.5 text-[15px] font-medium text-[var(--accent-fg)] shadow-[0_12px_32px_rgba(0,86,59,0.22)] transition hover:bg-[var(--castleton-deep)] disabled:opacity-70"
+        >
+          {loading ? "Triaging…" : "Run triage"}
+          <span aria-hidden className="ml-2">
+            →
+          </span>
+        </button>
+      </div>
+    </div>
+  );
+}
+
+function MailListRow({
+  entry,
+  selected,
+  onSelect,
+  muted,
+}: {
+  entry: ListItem;
+  selected: boolean;
+  onSelect: () => void;
+  muted?: boolean;
+}) {
+  const email = entry.item.email;
+  const isReply = entry.kind === "reply";
+
+  return (
+    <li>
+      <button
+        type="button"
+        onClick={onSelect}
+        className={`flex w-full items-start gap-3 border-l-2 px-3 py-3 text-left transition sm:px-4 ${
+          selected
+            ? "border-[var(--castleton)] bg-[var(--castleton-soft)]/55"
+            : "border-transparent hover:bg-[var(--background)]"
+        } ${muted ? "opacity-70" : ""}`}
+      >
+        <span
+          className={`mt-0.5 flex h-8 w-8 shrink-0 items-center justify-center rounded-full text-[10px] font-medium tracking-wide ${
+            isReply
+              ? "bg-[var(--castleton)] text-[var(--accent-fg)]"
+              : "bg-[var(--gold-soft)] text-[var(--castleton)]"
+          }`}
+        >
+          {initials(email.from)}
+        </span>
+        <span className="min-w-0 flex-1">
+          <span className="flex items-baseline justify-between gap-2">
+            <span className="truncate text-sm font-medium text-[var(--ink)]">
+              {displayName(email.from)}
+            </span>
+            <span className="shrink-0 text-[11px] text-[var(--muted)]">
+              {shortDate(email.date)}
+            </span>
+          </span>
+          <span className="mt-0.5 block truncate text-sm text-[var(--ink)]/90">
+            {email.subject}
+          </span>
+          <span className="mt-0.5 flex items-center gap-2">
+            <span
+              className={`text-[10px] uppercase tracking-[0.12em] ${
+                isReply ? "text-[var(--castleton)]" : "text-[var(--gold)]"
+              }`}
+            >
+              {isReply ? "Reply" : "FYI"}
+            </span>
+            <span className="truncate text-xs text-[var(--muted)]">
+              {entry.item.reason}
+            </span>
+          </span>
+        </span>
+      </button>
+    </li>
+  );
+}
+
+function ReadingPane({
+  selected,
+  loading,
+  onBack,
+  voiceBrief,
+  voiceSampleCount,
+  voiceCached,
+  meta,
+}: {
+  selected: ListItem | null;
+  loading: boolean;
+  onBack: () => void;
+  voiceBrief?: string;
+  voiceSampleCount?: number;
+  voiceCached?: boolean;
+  meta: {
+    days: number;
+    mode: TriageMode;
+    model?: string;
+    voiceCached?: boolean;
+  } | null;
+}) {
+  if (!selected) {
+    return (
+      <div className="flex flex-1 flex-col items-center justify-center px-8 text-center">
+        <p className="text-sm text-[var(--muted)]">
+          {loading
+            ? "Sorting your mail…"
+            : "Select a message to read the draft or FYI."}
+        </p>
+      </div>
+    );
+  }
+
+  const email = selected.item.email;
+  const isReply = selected.kind === "reply";
+  const draft = selected.kind === "reply" ? selected.item.draft : null;
+  const gmailDraftId =
+    selected.kind === "reply" ? selected.item.gmailDraftId : undefined;
+
+  return (
+    <div className="animate-pane flex min-h-0 flex-1 flex-col">
+      <div className="shrink-0 border-b border-[var(--line)]/70 bg-[var(--paper)]/80 px-4 py-4 sm:px-8">
+        <button
+          type="button"
+          onClick={onBack}
+          className="mb-3 text-xs text-[var(--muted)] md:hidden"
+        >
+          ← Back to list
+        </button>
+        <div className="flex flex-wrap items-center gap-2">
+          <span
+            className={`rounded-sm px-2 py-0.5 text-[10px] uppercase tracking-[0.14em] ${
+              isReply
+                ? "bg-[var(--castleton-soft)] text-[var(--castleton)]"
+                : "bg-[var(--gold-soft)] text-[#7a5e3a]"
+            }`}
+          >
+            {isReply ? "Needs reply" : "Worth knowing"}
+          </span>
+          {selected.prior && (
+            <span className="text-[10px] uppercase tracking-[0.14em] text-[var(--muted)]">
+              Already reviewed
+            </span>
+          )}
+          {gmailDraftId && (
+            <span className="text-[10px] uppercase tracking-[0.14em] text-[var(--castleton)]">
+              Draft saved
+            </span>
+          )}
+        </div>
+        <h2 className="font-display mt-3 text-xl leading-snug text-[var(--castleton)] sm:text-2xl">
+          {email.subject}
+        </h2>
+        <p className="mt-2 text-sm text-[var(--muted)]">
+          {displayName(email.from)}
+          {shortDate(email.date) ? ` · ${shortDate(email.date)}` : ""}
+        </p>
+      </div>
+
+      <div className="min-h-0 flex-1 overflow-y-auto px-4 py-6 sm:px-8">
+        <div className="mx-auto max-w-2xl">
+          <section>
+            <h3 className="text-[11px] uppercase tracking-[0.16em] text-[var(--muted)]">
+              Why it matters
+            </h3>
+            <p className="mt-2 text-[0.95rem] leading-relaxed text-[var(--ink)]">
+              {selected.item.reason}
             </p>
+          </section>
+
+          {isReply && draft && (
+            <section className="mt-8">
+              <h3 className="text-[11px] uppercase tracking-[0.16em] text-[var(--muted)]">
+                Draft reply
+              </h3>
+              <pre className="mt-3 whitespace-pre-wrap rounded-sm border border-[var(--line)]/80 bg-[var(--paper)] px-5 py-4 text-[0.95rem] leading-[1.65] text-[var(--ink)] shadow-[0_1px_0_rgba(13,31,24,0.03)]">
+                {draft}
+              </pre>
+            </section>
           )}
 
-          {(result?.voiceBrief || liveCounts.voiceBrief) && (
-            <details className="border-t border-[var(--line)] pt-4">
+          <div className="mt-8">
+            <a
+              href={`https://mail.google.com/mail/u/0/#inbox/${email.threadId}`}
+              target="_blank"
+              rel="noreferrer"
+              className="inline-flex items-center gap-2 rounded-sm border border-[var(--castleton)]/25 bg-[var(--paper)] px-4 py-2.5 text-sm text-[var(--castleton)] transition hover:border-[var(--castleton)] hover:bg-[var(--castleton-soft)]/40"
+            >
+              Open thread in Gmail
+              <span aria-hidden>↗</span>
+            </a>
+          </div>
+
+          {voiceBrief && (
+            <details className="mt-12 border-t border-[var(--line)] pt-5">
               <summary className="cursor-pointer text-sm text-[var(--muted)] hover:text-[var(--ink)]">
-                Your writing tone ·{" "}
-                {result?.voiceSampleCount ?? liveCounts.voiceSampleCount} sent
-                samples
+                Your writing tone
+                {typeof voiceSampleCount === "number"
+                  ? ` · ${voiceSampleCount} sent samples`
+                  : ""}
                 {voiceCached ? " · saved" : ""}
               </summary>
               <pre className="mt-3 whitespace-pre-wrap text-sm leading-relaxed text-[var(--muted)]">
-                {result?.voiceBrief ?? liveCounts.voiceBrief}
+                {voiceBrief}
               </pre>
             </details>
           )}
-        </div>
-      )}
-    </div>
-  );
-}
 
-function BriefStat({
-  label,
-  value,
-  hint,
-  emphasis,
-}: {
-  label: string;
-  value: number | string;
-  hint: string;
-  emphasis?: boolean;
-}) {
-  return (
-    <div
-      className={`px-4 py-4 ${emphasis ? "bg-[var(--castleton-soft)]/60" : ""}`}
-    >
-      <p className="text-[11px] uppercase tracking-[0.14em] text-[var(--muted)]">
-        {label}
-      </p>
-      <p
-        className={`font-display mt-1 text-3xl tabular-nums ${
-          emphasis ? "text-[var(--castleton)]" : "text-[var(--ink)]"
-        }`}
-      >
-        {value}
-      </p>
-      <p className="mt-1 text-xs text-[var(--muted)]">{hint}</p>
-    </div>
-  );
-}
-
-function ReplyRow({
-  item,
-  open,
-  onToggle,
-}: {
-  item: NeedsReplyResult;
-  open: boolean;
-  onToggle: () => void;
-}) {
-  return (
-    <li className="animate-rise">
-      <button
-        type="button"
-        onClick={onToggle}
-        className="flex w-full items-start justify-between gap-3 py-4 text-left transition hover:bg-[var(--castleton-soft)]/40"
-      >
-        <div className="min-w-0">
-          <p className="truncate font-medium text-[var(--ink)]">
-            {item.email.subject}
-          </p>
-          <p className="mt-0.5 truncate text-sm text-[var(--muted)]">
-            {displayName(item.email.from)}
-            {shortDate(item.email.date)
-              ? ` · ${shortDate(item.email.date)}`
-              : ""}
-          </p>
-          {!open && (
-            <p className="mt-1 line-clamp-1 text-sm text-[var(--ink)]/80">
-              {item.reason}
+          {meta && (
+            <p className="mt-10 text-xs text-[var(--muted)]">
+              Last {meta.days} days
+              {meta.mode === "new" ? " · what’s new" : " · full re-scan"}
+              {meta.voiceCached ? " · saved tone" : " · tone rebuilt"}
+              {meta.model ? ` · ${meta.model}` : ""}
             </p>
           )}
         </div>
-        <span className="shrink-0 text-xs text-[var(--muted)]">
-          {open ? "Hide" : "Draft"}
-          {item.gmailDraftId ? " · saved" : ""}
-        </span>
-      </button>
-      {open && (
-        <div className="animate-rise pb-5">
-          <p className="text-sm text-[var(--ink)]">
-            <span className="font-medium">Why: </span>
-            {item.reason}
-          </p>
-          <pre className="mt-3 whitespace-pre-wrap bg-[var(--castleton-soft)]/50 px-4 py-3 text-sm leading-relaxed text-[var(--ink)]">
-            {item.draft}
-          </pre>
-          <a
-            href={`https://mail.google.com/mail/u/0/#inbox/${item.email.threadId}`}
-            target="_blank"
-            rel="noreferrer"
-            className="mt-3 inline-block text-sm text-[var(--castleton)] underline-offset-4 hover:underline"
-          >
-            Open thread in Gmail
-          </a>
-        </div>
-      )}
-    </li>
-  );
-}
-
-function FyiRow({ item }: { item: FyiResult }) {
-  return (
-    <li className="animate-rise border-b border-[var(--line)] last:border-b-0">
-      <a
-        href={`https://mail.google.com/mail/u/0/#inbox/${item.email.threadId}`}
-        target="_blank"
-        rel="noreferrer"
-        className="block px-1 py-3 transition hover:bg-[var(--gold-soft)]/50"
-      >
-        <div className="flex items-baseline justify-between gap-3">
-          <p className="min-w-0 truncate text-sm font-medium text-[var(--ink)]">
-            {item.email.subject}
-          </p>
-          <span className="shrink-0 text-[11px] text-[var(--muted)]">
-            {shortDate(item.email.date)}
-          </span>
-        </div>
-        <p className="mt-0.5 truncate text-xs text-[var(--muted)]">
-          {displayName(item.email.from)}
-        </p>
-        <p className="mt-1 text-sm leading-snug text-[var(--ink)]/85">
-          {item.reason}
-        </p>
-      </a>
-    </li>
-  );
-}
-
-function SkeletonRow() {
-  return (
-    <div className="animate-shimmer space-y-2 py-3">
-      <div className="h-4 w-2/3 rounded-sm bg-[var(--castleton-soft)]" />
-      <div className="h-3 w-1/3 rounded-sm bg-[var(--castleton-soft)]" />
+      </div>
     </div>
   );
 }
 
-function SkeletonDraft() {
+function SkeletonListRow() {
   return (
-    <div className="animate-shimmer space-y-2">
-      <div className="h-4 w-3/4 rounded-sm bg-[var(--castleton-soft)]" />
-      <div className="h-3 w-1/2 rounded-sm bg-[var(--castleton-soft)]" />
-      <p className="text-xs text-[var(--muted)]">Drafting…</p>
+    <div className="animate-shimmer flex items-start gap-3 px-4 py-3">
+      <div className="h-8 w-8 rounded-full bg-[var(--castleton-soft)]" />
+      <div className="min-w-0 flex-1 space-y-2">
+        <div className="h-3.5 w-1/3 rounded-sm bg-[var(--castleton-soft)]" />
+        <div className="h-3.5 w-2/3 rounded-sm bg-[var(--castleton-soft)]" />
+        <div className="h-3 w-1/2 rounded-sm bg-[var(--castleton-soft)]" />
+      </div>
     </div>
   );
 }
