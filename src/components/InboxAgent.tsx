@@ -66,7 +66,8 @@ export function InboxAgent({ userName, userEmail, autoRun = false }: Props) {
   const [days, setDays] = useState<TriageDays>(7);
   const [mode, setMode] = useState<TriageMode>("new");
   const [refreshTone, setRefreshTone] = useState(false);
-  const [settingsOpen, setSettingsOpen] = useState(false);
+  const [optionsOpen, setOptionsOpen] = useState(false);
+  const optionsRef = useRef<HTMLDivElement>(null);
   const [filter, setFilter] = useState<ListFilter>("reply");
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -309,6 +310,20 @@ export function InboxAgent({ userName, userEmail, autoRun = false }: Props) {
   }
 
   useEffect(() => {
+    if (!optionsOpen) return;
+    function onPointerDown(event: MouseEvent) {
+      if (
+        optionsRef.current &&
+        !optionsRef.current.contains(event.target as Node)
+      ) {
+        setOptionsOpen(false);
+      }
+    }
+    document.addEventListener("mousedown", onPointerDown);
+    return () => document.removeEventListener("mousedown", onPointerDown);
+  }, [optionsOpen]);
+
+  useEffect(() => {
     if (!autoRun || autoStarted.current) return;
     autoStarted.current = true;
     if (typeof window !== "undefined") {
@@ -335,51 +350,92 @@ export function InboxAgent({ userName, userEmail, autoRun = false }: Props) {
             The Best Inbox Agent
           </Link>
 
-          <div className="ml-auto flex items-center gap-2 sm:gap-3">
-            <label className="hidden items-center gap-1.5 text-xs text-[var(--muted)] sm:flex">
-              <span className="sr-only">Triage window</span>
-              <select
-                value={days}
-                disabled={loading}
-                onChange={(e) =>
-                  setDays(Number(e.target.value) as TriageDays)
-                }
-                className="cursor-pointer rounded-sm border border-[var(--line)] bg-[var(--background)] px-2.5 py-1.5 text-xs text-[var(--ink)] outline-none transition hover:border-[var(--castleton)]/40 focus:border-[var(--castleton)]"
-              >
-                {DAY_OPTIONS.map((opt) => (
-                  <option key={opt.value} value={opt.value}>
-                    Last {opt.label}
-                  </option>
-                ))}
-              </select>
-            </label>
-
-            <label className="hidden items-center gap-1.5 text-xs text-[var(--muted)] md:flex">
-              <span className="sr-only">Triage mode</span>
-              <select
-                value={mode}
-                disabled={loading}
-                onChange={(e) => setMode(e.target.value as TriageMode)}
-                className="cursor-pointer rounded-sm border border-[var(--line)] bg-[var(--background)] px-2.5 py-1.5 text-xs text-[var(--ink)] outline-none transition hover:border-[var(--castleton)]/40 focus:border-[var(--castleton)]"
-              >
-                <option value="new">What’s new</option>
-                <option value="rescan">Re-scan all</option>
-              </select>
-            </label>
-
-            <button
-              type="button"
+          <div className="ml-auto flex flex-wrap items-center justify-end gap-2 sm:gap-3">
+            <select
+              value={days}
               disabled={loading}
-              onClick={() => setSettingsOpen((o) => !o)}
-              className={`rounded-sm border px-2.5 py-1.5 text-xs transition ${
-                settingsOpen
-                  ? "border-[var(--castleton)] bg-[var(--castleton-soft)] text-[var(--castleton)]"
-                  : "border-[var(--line)] text-[var(--muted)] hover:text-[var(--ink)]"
-              }`}
-              aria-expanded={settingsOpen}
+              aria-label="Triage window"
+              onChange={(e) => setDays(Number(e.target.value) as TriageDays)}
+              className="cursor-pointer rounded-sm border border-[var(--line)] bg-[var(--background)] px-2.5 py-1.5 text-xs text-[var(--ink)] outline-none transition hover:border-[var(--castleton)]/40 focus:border-[var(--castleton)]"
             >
-              Options
-            </button>
+              {DAY_OPTIONS.map((opt) => (
+                <option key={opt.value} value={opt.value}>
+                  Last {opt.label}
+                </option>
+              ))}
+            </select>
+
+            <select
+              value={mode}
+              disabled={loading}
+              aria-label="Triage mode"
+              onChange={(e) => setMode(e.target.value as TriageMode)}
+              className="cursor-pointer rounded-sm border border-[var(--line)] bg-[var(--background)] px-2.5 py-1.5 text-xs text-[var(--ink)] outline-none transition hover:border-[var(--castleton)]/40 focus:border-[var(--castleton)]"
+            >
+              <option value="new">What’s new</option>
+              <option value="rescan">Re-scan all</option>
+            </select>
+
+            <div ref={optionsRef} className="relative">
+              <button
+                type="button"
+                disabled={loading}
+                onClick={() => setOptionsOpen((o) => !o)}
+                className={`inline-flex items-center gap-1 rounded-sm border px-2.5 py-1.5 text-xs transition ${
+                  optionsOpen || refreshTone
+                    ? "border-[var(--castleton)] bg-[var(--castleton-soft)] text-[var(--castleton)]"
+                    : "border-[var(--line)] text-[var(--muted)] hover:text-[var(--ink)]"
+                }`}
+                aria-expanded={optionsOpen}
+                aria-haspopup="menu"
+              >
+                Options
+                <span aria-hidden className="text-[10px]">
+                  ▾
+                </span>
+              </button>
+              {optionsOpen && (
+                <div
+                  role="menu"
+                  className="absolute right-0 z-30 mt-1 min-w-[240px] rounded-sm border border-[var(--line)] bg-[var(--paper)] py-1 shadow-[0_12px_32px_rgba(13,31,24,0.12)]"
+                >
+                  <button
+                    type="button"
+                    role="menuitemcheckbox"
+                    aria-checked={refreshTone}
+                    disabled={loading}
+                    onClick={() => {
+                      setRefreshTone((v) => !v);
+                      setOptionsOpen(false);
+                    }}
+                    className="flex w-full items-start gap-2 px-3 py-2.5 text-left text-sm text-[var(--ink)] transition hover:bg-[var(--castleton-soft)]/70"
+                  >
+                    <span
+                      className={`mt-0.5 flex h-4 w-4 shrink-0 items-center justify-center rounded-[3px] border text-[10px] ${
+                        refreshTone
+                          ? "border-[var(--castleton)] bg-[var(--castleton)] text-[var(--accent-fg)]"
+                          : "border-[var(--line)] text-transparent"
+                      }`}
+                      aria-hidden
+                    >
+                      ✓
+                    </span>
+                    <span>
+                      <span className="block font-medium">
+                        Refresh writing tone from Sent
+                      </span>
+                      <span className="mt-0.5 block text-xs text-[var(--muted)]">
+                        {refreshTone
+                          ? "On for the next triage run"
+                          : voiceCached
+                            ? "Using saved tone"
+                            : "Rebuild tone from your Sent mail"}
+                      </span>
+                    </span>
+                  </button>
+                </div>
+              )}
+            </div>
 
             <button
               type="button"
@@ -395,62 +451,6 @@ export function InboxAgent({ userName, userEmail, autoRun = false }: Props) {
             </div>
           </div>
         </div>
-
-        {settingsOpen && (
-          <div className="animate-rise border-t border-[var(--line)] bg-[var(--paper)] px-4 py-3 sm:px-5">
-            <div className="flex flex-col gap-3 sm:flex-row sm:flex-wrap sm:items-center sm:justify-between">
-              <div className="flex flex-wrap items-center gap-2 md:hidden">
-                <select
-                  value={days}
-                  disabled={loading}
-                  onChange={(e) =>
-                    setDays(Number(e.target.value) as TriageDays)
-                  }
-                  className="cursor-pointer rounded-sm border border-[var(--line)] bg-[var(--background)] px-2.5 py-1.5 text-xs text-[var(--ink)]"
-                >
-                  {DAY_OPTIONS.map((opt) => (
-                    <option key={opt.value} value={opt.value}>
-                      Last {opt.label}
-                    </option>
-                  ))}
-                </select>
-                <select
-                  value={mode}
-                  disabled={loading}
-                  onChange={(e) => setMode(e.target.value as TriageMode)}
-                  className="cursor-pointer rounded-sm border border-[var(--line)] bg-[var(--background)] px-2.5 py-1.5 text-xs text-[var(--ink)]"
-                >
-                  <option value="new">What’s new</option>
-                  <option value="rescan">Re-scan all</option>
-                </select>
-              </div>
-
-              <label className="flex cursor-pointer items-center gap-2 text-sm text-[var(--muted)]">
-                <input
-                  type="checkbox"
-                  checked={refreshTone}
-                  disabled={loading}
-                  onChange={(e) => setRefreshTone(e.target.checked)}
-                  className="accent-[var(--castleton)]"
-                />
-                Refresh writing tone from Sent
-                {voiceCached && !refreshTone && (
-                  <span className="text-[var(--castleton)]">· saved tone</span>
-                )}
-              </label>
-
-              <p className="text-xs text-[var(--muted)]">
-                {persistence
-                  ? "Persistence on — tone and reviewed mail are remembered."
-                  : "Persistence off — add Supabase env vars to remember between runs."}
-              </p>
-
-              <div className="sm:hidden">
-                <SignOutButton />
-              </div>
-            </div>
-          </div>
-        )}
 
         {loading && (
           <div className="absolute inset-x-0 bottom-0 h-0.5 overflow-hidden bg-[var(--castleton-soft)]">
