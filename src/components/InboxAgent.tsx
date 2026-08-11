@@ -119,8 +119,6 @@ export function InboxAgent({ userName, userEmail, autoRun = false }: Props) {
   const fyiCount = showFyi?.length ?? 0;
   const newCount = result?.newCount ?? liveCounts.newCount;
   const priorCount = result?.priorCount ?? liveCounts.priorCount;
-  const persistence =
-    result?.persistenceEnabled ?? liveCounts.persistenceEnabled ?? false;
   const voiceCached = result?.voiceCached ?? liveCounts.voiceCached;
   const hasRun = loading || result != null || showFyi != null || error != null;
 
