@@ -37,11 +37,20 @@ export type FyiResult = {
 export type TriageResponse = {
   needsReply: NeedsReplyResult[];
   fyi: FyiResult[];
+  /** Already reviewed in this window (shown separately when mode is new-only). */
+  priorNeedsReply?: NeedsReplyResult[];
+  priorFyi?: FyiResult[];
   ignoredCount: number;
   scannedCount: number;
+  newCount: number;
+  priorCount: number;
   sentFetchedCount: number;
   voiceSampleCount: number;
   voiceBrief: string;
+  voiceCached: boolean;
+  voiceUpdatedAt?: string;
   model: string;
   days: 7 | 14 | 30;
+  mode: "new" | "rescan";
+  persistenceEnabled: boolean;
 };
