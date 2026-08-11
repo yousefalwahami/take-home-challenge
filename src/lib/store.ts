@@ -118,22 +118,35 @@ export async function saveTriagedMessages(
   const sb = getSupabase();
   if (!sb || rows.length === 0) return;
 
+  // Preserve existing draft / gmail_draft_id when caller omits them (avoid wiping).
+  const existing = await loadTriagedByIds(
+    userEmail,
+    rows.map((r) => r.email.id),
+  );
+
   const now = new Date().toISOString();
-  const payload = rows.map((r) => ({
-    user_email: userEmail,
-    gmail_id: r.email.id,
-    thread_id: r.email.threadId,
-    subject: r.email.subject,
-    from_header: r.email.from,
-    date_header: r.email.date,
-    snippet: r.email.snippet,
-    body_preview: r.email.body.slice(0, 2000),
-    bucket: r.bucket,
-    reason: r.reason,
-    draft: r.draft ?? null,
-    gmail_draft_id: r.gmailDraftId ?? null,
-    last_triaged_at: now,
-  }));
+  const payload = rows.map((r) => {
+    const prev = existing.get(r.email.id);
+    const draft = r.draft ?? prev?.draft ?? null;
+    const gmailDraftId =
+      r.gmailDraftId ?? prev?.gmail_draft_id ?? null;
+
+    return {
+      user_email: userEmail,
+      gmail_id: r.email.id,
+      thread_id: r.email.threadId,
+      subject: r.email.subject,
+      from_header: r.email.from,
+      date_header: r.email.date,
+      snippet: r.email.snippet,
+      body_preview: r.email.body.slice(0, 2000),
+      bucket: r.bucket,
+      reason: r.reason,
+      draft,
+      gmail_draft_id: gmailDraftId,
+      last_triaged_at: now,
+    };
+  });
 
   const { error } = await sb.from("triaged_messages").upsert(payload, {
     onConflict: "user_email,gmail_id",

@@ -292,37 +292,84 @@ export async function POST(request: Request) {
           }
 
           if (needsReplyEmails.length > 0) {
-            await stage(
-              "drafting",
-              `Drafting ${needsReplyEmails.length} repl${needsReplyEmails.length === 1 ? "y" : "ies"} in your tone…`,
-            );
+            const needsNewDraft = needsReplyEmails.filter((email) => {
+              const existing = known.get(email.id);
+              return !(existing?.draft && existing.draft.trim().length > 0);
+            });
+
+            if (needsNewDraft.length > 0) {
+              await stage(
+                "drafting",
+                `Drafting ${needsNewDraft.length} repl${needsNewDraft.length === 1 ? "y" : "ies"} in your tone…`,
+              );
+            } else {
+              await stage(
+                "drafting",
+                `Reusing ${needsReplyEmails.length} saved draft${needsReplyEmails.length === 1 ? "" : "s"}…`,
+              );
+            }
 
             const drafted = await Promise.all(
               needsReplyEmails.map(async (email) => {
                 const reason =
                   triageById.get(email.id)?.reason ?? "Needs a response.";
+                const existing = known.get(email.id);
+
+                // One draft per email — never regenerate text if already saved.
+                if (existing?.draft && existing.draft.trim().length > 0) {
+                  return {
+                    email,
+                    reason: existing.reason || reason,
+                    draft: existing.draft,
+                    gmailDraftId: existing.gmail_draft_id ?? undefined,
+                  };
+                }
+
                 const draft = await draftReply({ email, reason, voice });
-                return { email, reason, draft };
+                return {
+                  email,
+                  reason,
+                  draft,
+                  gmailDraftId: undefined as string | undefined,
+                };
               }),
             );
 
-            await stage("saving", "Saving drafts to Gmail…");
+            const needsGmailCreate = drafted.filter((d) => !d.gmailDraftId);
+            if (needsGmailCreate.length > 0) {
+              await stage("saving", "Saving new drafts to Gmail…");
+            } else {
+              await stage(
+                "saving",
+                "Drafts already in Gmail — skipping create…",
+              );
+            }
 
             const draftedWithGmail = await Promise.all(
               drafted.map(async (item) => {
-                let gmailDraftId: string | undefined;
-                try {
-                  gmailDraftId = await createReplyDraft({
-                    accessToken,
-                    to: extractEmailAddress(item.email.from),
-                    subject: item.email.subject,
-                    body: item.draft,
-                    threadId: item.email.threadId,
-                  });
-                } catch {
-                  // keep UI draft even if Gmail save fails
+                let gmailDraftId = item.gmailDraftId;
+
+                // Only create a Gmail draft once per message id.
+                if (!gmailDraftId) {
+                  try {
+                    gmailDraftId = await createReplyDraft({
+                      accessToken,
+                      to: extractEmailAddress(item.email.from),
+                      subject: item.email.subject,
+                      body: item.draft,
+                      threadId: item.email.threadId,
+                    });
+                  } catch {
+                    // keep UI draft even if Gmail save fails
+                  }
                 }
-                const full: NeedsReplyResult = { ...item, gmailDraftId };
+
+                const full: NeedsReplyResult = {
+                  email: item.email,
+                  reason: item.reason,
+                  draft: item.draft,
+                  gmailDraftId,
+                };
                 await send("draft", full);
                 toPersist.push({
                   email: item.email,
