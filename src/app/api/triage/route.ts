@@ -4,6 +4,7 @@ import {
   createReplyDraft,
   fetchInboxEmails,
   fetchSentEmails,
+  type TriageDays,
 } from "@/lib/gmail";
 import { getOpenRouterModel } from "@/lib/openrouter";
 import { triageEmails } from "@/lib/triage";
@@ -30,7 +31,15 @@ function sseEncode(event: string, data: unknown): Uint8Array {
   );
 }
 
-export async function POST() {
+function parseDays(value: unknown): TriageDays {
+  if (value === 14 || value === 30 || value === 7) return value;
+  if (value === "14" || value === "30" || value === "7") {
+    return Number(value) as TriageDays;
+  }
+  return 7;
+}
+
+export async function POST(request: Request) {
   const session = await auth();
   if (!session?.user) {
     return new Response(JSON.stringify({ error: "Unauthorized" }), {
@@ -48,6 +57,13 @@ export async function POST() {
   }
 
   const accessToken = session.accessToken;
+  let days: TriageDays = 7;
+  try {
+    const body = (await request.json()) as { days?: unknown };
+    days = parseDays(body?.days);
+  } catch {
+    days = 7;
+  }
 
   const stream = new ReadableStream<Uint8Array>({
     async start(controller) {
@@ -63,21 +79,25 @@ export async function POST() {
         send("stage", { stage: name, detail });
 
       try {
-        await stage("fetching", "Reading inbox and Sent…");
+        await stage(
+          "fetching",
+          `Pulling your last ${days} days of inbox…`,
+        );
 
         const [inbox, sent] = await Promise.all([
-          fetchInboxEmails(accessToken),
+          fetchInboxEmails(accessToken, days),
           fetchSentEmails(accessToken),
         ]);
 
         await send("counts", {
           scannedCount: inbox.length,
           sentFetchedCount: sent.length,
+          days,
         });
 
         await stage(
           "analyzing",
-          `Classifying ${inbox.length} messages · learning voice from Sent…`,
+          `Sorting ${inbox.length} emails · learning your tone from Sent mail…`,
         );
 
         const [triage, voice] = await Promise.all([
@@ -108,6 +128,7 @@ export async function POST() {
           voiceSampleCount: voice.sampleCount,
           voiceBrief: voice.styleBrief,
           model: getOpenRouterModel(),
+          days,
         });
 
         const needsReply: NeedsReplyResult[] = [];
@@ -115,10 +136,9 @@ export async function POST() {
         if (needsReplyEmails.length > 0) {
           await stage(
             "drafting",
-            `Writing ${needsReplyEmails.length} draft${needsReplyEmails.length === 1 ? "" : "s"} in your voice…`,
+            `Drafting ${needsReplyEmails.length} repl${needsReplyEmails.length === 1 ? "y" : "ies"} in your tone…`,
           );
 
-          // Parallel drafts (biggest wall-clock win vs sequential).
           const drafted = await Promise.all(
             needsReplyEmails.map(async (email) => {
               const reason =
@@ -156,7 +176,6 @@ export async function POST() {
           needsReply.push(...draftedWithGmail);
         }
 
-        // Stable order: match inbox order for needs_reply
         const order = new Map(needsReplyEmails.map((e, i) => [e.id, i]));
         needsReply.sort(
           (a, b) => (order.get(a.email.id) ?? 0) - (order.get(b.email.id) ?? 0),
@@ -171,9 +190,10 @@ export async function POST() {
           voiceSampleCount: voice.sampleCount,
           voiceBrief: voice.styleBrief,
           model: getOpenRouterModel(),
+          days,
         };
 
-        await stage("done", "All set");
+        await stage("done", "Caught up");
         await send("done", payload);
         await writeChain;
       } catch (error) {

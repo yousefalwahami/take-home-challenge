@@ -43,4 +43,5 @@ export type TriageResponse = {
   voiceSampleCount: number;
   voiceBrief: string;
   model: string;
+  days: 7 | 14 | 30;
 };

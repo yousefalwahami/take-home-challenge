@@ -1,7 +1,6 @@
 import { google, type gmail_v1 } from "googleapis";
 import type { EmailMessage } from "@/lib/types";
 
-const INBOX_MAX = 50;
 const SENT_MAX = 20;
 const BODY_MAX_CHARS = 6000;
 
@@ -124,11 +123,15 @@ async function listAndFetch(
   return messages;
 }
 
+export type TriageDays = 7 | 14 | 30;
+
 export async function fetchInboxEmails(
   accessToken: string,
+  days: TriageDays = 7,
 ): Promise<EmailMessage[]> {
   const gmail = getGmail(accessToken);
-  return listAndFetch(gmail, "in:inbox newer_than:7d", INBOX_MAX);
+  const maxResults = days === 7 ? 50 : days === 14 ? 75 : 100;
+  return listAndFetch(gmail, `in:inbox newer_than:${days}d`, maxResults);
 }
 
 /** Most recent Sent messages (no short date window — voice needs volume). */
