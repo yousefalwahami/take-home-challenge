@@ -69,6 +69,7 @@ export function InboxAgent({ userName, userEmail, autoRun = false }: Props) {
   const [optionsOpen, setOptionsOpen] = useState(false);
   const optionsRef = useRef<HTMLDivElement>(null);
   const [filter, setFilter] = useState<ListFilter>("reply");
+  const [hydrating, setHydrating] = useState(true);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [result, setResult] = useState<TriageResponse | null>(null);
@@ -120,7 +121,12 @@ export function InboxAgent({ userName, userEmail, autoRun = false }: Props) {
   const newCount = result?.newCount ?? liveCounts.newCount;
   const priorCount = result?.priorCount ?? liveCounts.priorCount;
   const voiceCached = result?.voiceCached ?? liveCounts.voiceCached;
-  const hasRun = loading || result != null || showFyi != null || error != null;
+  const hasRun =
+    hydrating ||
+    loading ||
+    result != null ||
+    showFyi != null ||
+    error != null;
 
   const listItems = useMemo(() => {
     const replies: ListItem[] = (showDrafts ?? [])
@@ -204,7 +210,7 @@ export function InboxAgent({ userName, userEmail, autoRun = false }: Props) {
 
     const askedRefreshTone = refreshTone;
     setRefreshTone(false);
-    setSettingsOpen(false);
+    setOptionsOpen(false);
 
     try {
       const res = await fetch("/api/triage", {
@@ -321,8 +327,71 @@ export function InboxAgent({ userName, userEmail, autoRun = false }: Props) {
     return () => document.removeEventListener("mousedown", onPointerDown);
   }, [optionsOpen]);
 
+  // Restore saved triage from Supabase on load / when day window changes.
   useEffect(() => {
-    if (!autoRun || autoStarted.current) return;
+    if (loading) return;
+    let cancelled = false;
+
+    async function hydrate() {
+      setHydrating(true);
+      try {
+        const res = await fetch(`/api/inbox?days=${days}`);
+        if (!res.ok) return;
+        const data = (await res.json()) as {
+          hasData?: boolean;
+          result?: TriageResponse;
+          voice?: {
+            voiceBrief?: string;
+            voiceSampleCount?: number;
+            voiceCached?: boolean;
+            voiceUpdatedAt?: string;
+          } | null;
+        };
+
+        if (cancelled) return;
+
+        if (data.hasData && data.result) {
+          setResult(data.result);
+          setLiveCounts({
+            scannedCount: data.result.scannedCount,
+            newCount: data.result.newCount,
+            priorCount: data.result.priorCount,
+            ignoredCount: data.result.ignoredCount,
+            voiceSampleCount: data.result.voiceSampleCount,
+            voiceBrief: data.result.voiceBrief,
+            voiceCached: data.result.voiceCached,
+            voiceUpdatedAt: data.result.voiceUpdatedAt,
+            model: data.result.model,
+            days: data.result.days,
+            mode: data.result.mode,
+            persistenceEnabled: data.result.persistenceEnabled,
+          });
+        } else if (data.voice) {
+          setLiveCounts((c) => ({
+            ...c,
+            voiceBrief: data.voice?.voiceBrief,
+            voiceSampleCount: data.voice?.voiceSampleCount,
+            voiceCached: data.voice?.voiceCached,
+            voiceUpdatedAt: data.voice?.voiceUpdatedAt,
+            days,
+            persistenceEnabled: true,
+          }));
+        }
+      } catch {
+        // Empty state is fine if hydrate fails
+      } finally {
+        if (!cancelled) setHydrating(false);
+      }
+    }
+
+    void hydrate();
+    return () => {
+      cancelled = true;
+    };
+  }, [days, loading]);
+
+  useEffect(() => {
+    if (!autoRun || autoStarted.current || hydrating) return;
     autoStarted.current = true;
     if (typeof window !== "undefined") {
       window.history.replaceState(null, "", "/inbox");
@@ -330,7 +399,7 @@ export function InboxAgent({ userName, userEmail, autoRun = false }: Props) {
     void runTriage();
     // Intentionally once when Welcome hub deep-links with ?run=1
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [autoRun]);
+  }, [autoRun, hydrating]);
 
   function selectItem(key: string) {
     setSelectedKey(key);
@@ -496,7 +565,16 @@ export function InboxAgent({ userName, userEmail, autoRun = false }: Props) {
         </div>
       )}
 
-      {!hasRun ? (
+      {hydrating && !result ? (
+        <div className="flex flex-1 flex-col items-center justify-center px-6 text-center">
+          <p className="text-[11px] uppercase tracking-[0.22em] text-[var(--muted)]">
+            Your inbox brief
+          </p>
+          <p className="font-display mt-3 text-2xl text-[var(--castleton)]">
+            Loading saved results…
+          </p>
+        </div>
+      ) : !hasRun ? (
         <EmptyInbox
           userName={userName}
           userEmail={userEmail}

@@ -155,6 +155,40 @@ export async function saveTriagedMessages(
   if (error) console.error("saveTriagedMessages:", error.message);
 }
 
+export async function loadTriagedForUser(
+  userEmail: string,
+  days?: 7 | 14 | 30,
+): Promise<StoredMessage[]> {
+  const sb = getSupabase();
+  if (!sb) return [];
+
+  const { data, error } = await sb
+    .from("triaged_messages")
+    .select(
+      "gmail_id, thread_id, subject, from_header, date_header, snippet, body_preview, bucket, reason, draft, gmail_draft_id, last_triaged_at",
+    )
+    .eq("user_email", userEmail)
+    .order("last_triaged_at", { ascending: false })
+    .limit(300);
+
+  if (error) {
+    console.error("loadTriagedForUser:", error.message);
+    return [];
+  }
+
+  const rows = (data ?? []) as StoredMessage[];
+  if (!days) return rows;
+
+  const cutoff = Date.now() - days * 24 * 60 * 60 * 1000;
+  return rows.filter((row) => {
+    const fromHeader = Date.parse(row.date_header);
+    if (!Number.isNaN(fromHeader)) return fromHeader >= cutoff;
+    const fromSaved = Date.parse(row.last_triaged_at);
+    if (!Number.isNaN(fromSaved)) return fromSaved >= cutoff;
+    return true;
+  });
+}
+
 export function storedToNeedsReply(row: StoredMessage): NeedsReplyResult | null {
   if (row.bucket !== "needs_reply" || !row.draft) return null;
   return {
