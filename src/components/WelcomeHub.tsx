@@ -65,8 +65,19 @@ export function WelcomeHub({ userName, userEmail }: Props) {
         </div>
       </main>
 
-      <footer className="mx-auto w-full max-w-5xl shrink-0 px-6 pb-7 text-center text-[10px] text-[var(--muted)]/80 sm:px-10">
-        Powered by Claude Sonnet 5 via OpenRouter · Drafts only, never sends
+      <footer className="mx-auto flex w-full max-w-5xl shrink-0 items-center justify-center gap-4 px-6 pb-7 text-[10px] text-[var(--muted)]/80 sm:px-10">
+        <span className="uppercase tracking-[0.16em]">
+          Drafts only, never sends
+        </span>
+        <span aria-hidden>·</span>
+        <a
+          href="https://github.com/yousefalwahami/take-home-challenge"
+          target="_blank"
+          rel="noreferrer"
+          className="uppercase tracking-[0.16em] transition hover:text-[var(--castleton)]"
+        >
+          Open source
+        </a>
       </footer>
     </div>
   );

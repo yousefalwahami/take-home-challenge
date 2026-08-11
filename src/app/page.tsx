@@ -68,9 +68,19 @@ export default async function HomePage() {
           <p className="font-display animate-fade text-sm tracking-[0.06em] text-[var(--castleton)] sm:text-base">
             The Best Inbox Agent
           </p>
-          <span className="animate-fade text-[11px] uppercase tracking-[0.18em] text-[var(--muted)]">
-            Drafts only
-          </span>
+          <div className="animate-fade flex items-center gap-4">
+            <a
+              href="https://github.com/yousefalwahami/take-home-challenge"
+              target="_blank"
+              rel="noreferrer"
+              className="text-[11px] uppercase tracking-[0.18em] text-[var(--muted)] transition hover:text-[var(--castleton)]"
+            >
+              Open source
+            </a>
+            <span className="text-[11px] uppercase tracking-[0.18em] text-[var(--muted)]">
+              Drafts only, never sends
+            </span>
+          </div>
         </header>
 
         <main className="mx-auto flex w-full max-w-2xl flex-1 flex-col px-6 pb-5 sm:px-10">
@@ -106,7 +116,7 @@ export default async function HomePage() {
               ))}
             </div>
             <p className="mt-5 text-center text-[10px] text-[var(--muted)]/80">
-              Powered by Claude Sonnet 5 via OpenRouter · Never sends
+              Drafts only, never sends
             </p>
           </section>
         </main>

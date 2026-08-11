@@ -336,61 +336,36 @@ export function InboxAgent({ userName, userEmail, autoRun = false }: Props) {
           </Link>
 
           <div className="ml-auto flex items-center gap-2 sm:gap-3">
-            <div
-              role="group"
-              aria-label="Triage window"
-              className="hidden rounded-sm border border-[var(--line)] bg-[var(--background)] p-0.5 sm:inline-flex"
-            >
-              {DAY_OPTIONS.map((opt) => {
-                const active = days === opt.value;
-                return (
-                  <button
-                    key={opt.value}
-                    type="button"
-                    disabled={loading}
-                    onClick={() => setDays(opt.value)}
-                    className={`rounded-[2px] px-2.5 py-1.5 text-xs transition ${
-                      active
-                        ? "bg-[var(--castleton)] text-[var(--accent-fg)]"
-                        : "text-[var(--muted)] hover:text-[var(--ink)]"
-                    }`}
-                  >
-                    {opt.label}
-                  </button>
-                );
-              })}
-            </div>
+            <label className="hidden items-center gap-1.5 text-xs text-[var(--muted)] sm:flex">
+              <span className="sr-only">Triage window</span>
+              <select
+                value={days}
+                disabled={loading}
+                onChange={(e) =>
+                  setDays(Number(e.target.value) as TriageDays)
+                }
+                className="cursor-pointer rounded-sm border border-[var(--line)] bg-[var(--background)] px-2.5 py-1.5 text-xs text-[var(--ink)] outline-none transition hover:border-[var(--castleton)]/40 focus:border-[var(--castleton)]"
+              >
+                {DAY_OPTIONS.map((opt) => (
+                  <option key={opt.value} value={opt.value}>
+                    Last {opt.label}
+                  </option>
+                ))}
+              </select>
+            </label>
 
-            <div
-              role="group"
-              aria-label="Triage mode"
-              className="hidden rounded-sm border border-[var(--line)] bg-[var(--background)] p-0.5 md:inline-flex"
-            >
-              <button
-                type="button"
+            <label className="hidden items-center gap-1.5 text-xs text-[var(--muted)] md:flex">
+              <span className="sr-only">Triage mode</span>
+              <select
+                value={mode}
                 disabled={loading}
-                onClick={() => setMode("new")}
-                className={`rounded-[2px] px-2.5 py-1.5 text-xs transition ${
-                  mode === "new"
-                    ? "bg-[var(--castleton)] text-[var(--accent-fg)]"
-                    : "text-[var(--muted)] hover:text-[var(--ink)]"
-                }`}
+                onChange={(e) => setMode(e.target.value as TriageMode)}
+                className="cursor-pointer rounded-sm border border-[var(--line)] bg-[var(--background)] px-2.5 py-1.5 text-xs text-[var(--ink)] outline-none transition hover:border-[var(--castleton)]/40 focus:border-[var(--castleton)]"
               >
-                What’s new
-              </button>
-              <button
-                type="button"
-                disabled={loading}
-                onClick={() => setMode("rescan")}
-                className={`rounded-[2px] px-2.5 py-1.5 text-xs transition ${
-                  mode === "rescan"
-                    ? "bg-[var(--castleton)] text-[var(--accent-fg)]"
-                    : "text-[var(--muted)] hover:text-[var(--ink)]"
-                }`}
-              >
-                Re-scan
-              </button>
-            </div>
+                <option value="new">What’s new</option>
+                <option value="rescan">Re-scan all</option>
+              </select>
+            </label>
 
             <button
               type="button"
@@ -423,50 +398,31 @@ export function InboxAgent({ userName, userEmail, autoRun = false }: Props) {
 
         {settingsOpen && (
           <div className="animate-rise border-t border-[var(--line)] bg-[var(--paper)] px-4 py-3 sm:px-5">
-            <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-              <div className="flex flex-wrap items-center gap-2 sm:hidden">
-                {DAY_OPTIONS.map((opt) => {
-                  const active = days === opt.value;
-                  return (
-                    <button
-                      key={opt.value}
-                      type="button"
-                      disabled={loading}
-                      onClick={() => setDays(opt.value)}
-                      className={`rounded-sm px-3 py-1.5 text-xs ${
-                        active
-                          ? "bg-[var(--castleton)] text-[var(--accent-fg)]"
-                          : "border border-[var(--line)] text-[var(--muted)]"
-                      }`}
-                    >
-                      {opt.label}
-                    </button>
-                  );
-                })}
-                <button
-                  type="button"
+            <div className="flex flex-col gap-3 sm:flex-row sm:flex-wrap sm:items-center sm:justify-between">
+              <div className="flex flex-wrap items-center gap-2 md:hidden">
+                <select
+                  value={days}
                   disabled={loading}
-                  onClick={() => setMode("new")}
-                  className={`rounded-sm px-3 py-1.5 text-xs ${
-                    mode === "new"
-                      ? "bg-[var(--castleton)] text-[var(--accent-fg)]"
-                      : "border border-[var(--line)] text-[var(--muted)]"
-                  }`}
+                  onChange={(e) =>
+                    setDays(Number(e.target.value) as TriageDays)
+                  }
+                  className="cursor-pointer rounded-sm border border-[var(--line)] bg-[var(--background)] px-2.5 py-1.5 text-xs text-[var(--ink)]"
                 >
-                  What’s new
-                </button>
-                <button
-                  type="button"
+                  {DAY_OPTIONS.map((opt) => (
+                    <option key={opt.value} value={opt.value}>
+                      Last {opt.label}
+                    </option>
+                  ))}
+                </select>
+                <select
+                  value={mode}
                   disabled={loading}
-                  onClick={() => setMode("rescan")}
-                  className={`rounded-sm px-3 py-1.5 text-xs ${
-                    mode === "rescan"
-                      ? "bg-[var(--castleton)] text-[var(--accent-fg)]"
-                      : "border border-[var(--line)] text-[var(--muted)]"
-                  }`}
+                  onChange={(e) => setMode(e.target.value as TriageMode)}
+                  className="cursor-pointer rounded-sm border border-[var(--line)] bg-[var(--background)] px-2.5 py-1.5 text-xs text-[var(--ink)]"
                 >
-                  Re-scan
-                </button>
+                  <option value="new">What’s new</option>
+                  <option value="rescan">Re-scan all</option>
+                </select>
               </div>
 
               <label className="flex cursor-pointer items-center gap-2 text-sm text-[var(--muted)]">
